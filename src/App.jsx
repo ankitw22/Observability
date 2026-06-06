@@ -115,18 +115,20 @@ function LogRow({ entry }) {
           {entry.ts}
         </div>
 
-        {/* badge */}
+        {/* badge - only show for errors */}
         <div style={{ paddingRight:10 }}>
-          <span style={{
-            fontFamily: MONO, fontSize: 10, fontWeight: 600,
-            padding: "2px 8px", borderRadius: 3,
-            background: tc.bg, color: tc.fg,
-            border: `1px solid ${tc.border}`,
-            letterSpacing: "0.04em", whiteSpace: "nowrap",
-            display: "inline-block",
-          }}>
-            {entry.type}
-          </span>
+          {entry.type === "error" && (
+            <span style={{
+              fontFamily: MONO, fontSize: 10, fontWeight: 600,
+              padding: "2px 8px", borderRadius: 3,
+              background: tc.bg, color: tc.fg,
+              border: `1px solid ${tc.border}`,
+              letterSpacing: "0.04em", whiteSpace: "nowrap",
+              display: "inline-block",
+            }}>
+              {entry.type}
+            </span>
+          )}
         </div>
 
         {/* main */}
@@ -457,7 +459,7 @@ function normalizeRuns(apiData) {
     // group by run_id / session_id / id
     const groups = {};
     items.forEach(raw => {
-      const runId = raw.run_id || raw.session_id || raw.id || "default";
+      const runId = raw.run_id || raw.log_id || raw.session_id || raw.id || "default";
       if (!groups[runId]) groups[runId] = { runId, entries: [], ts: raw.timestamp || raw.ts || raw.created_at || "" };
       groups[runId].entries.push(normalizeEntry(raw));
     });
@@ -495,13 +497,15 @@ function timeAgo(ts) {
 const API_URL = "https://db.gtwy.ai/api/observability";
 
 export default function AIObservability() {
-  const [logs, setLogs]         = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState(null);
-  const [rawData, setRawData]   = useState(null);
-  const [search, setSearch]     = useState("");
-  const [filter, setFilter]     = useState("all");
-  const [detailId, setDetailId] = useState(null);
+  const [logs, setLogs]               = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState(null);
+  const [rawData, setRawData]         = useState(null);
+  const [search, setSearch]           = useState("");
+  const [filter]                      = useState("all");
+  const [detailId, setDetailId]       = useState(null);
+  const [searchResult, setSearchResult] = useState(null); // result from ID lookup
+  const [searchLoading, setSearchLoading] = useState(false);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true); setError(null);
@@ -520,14 +524,36 @@ export default function AIObservability() {
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
-  const FILTERS = ["all", "error", "tool", "llm"];
+  // debounced ID lookup
+  useEffect(() => {
+    setSearchResult(null);
+    if (!search.trim()) return;
+    const timer = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const res = await fetch(`${API_URL}/${encodeURIComponent(search.trim())}`);
+        if (res.ok) {
+          const data = await res.json();
+          const runs = normalizeRuns(data);
+          if (runs.length > 0) setSearchResult(runs);
+        }
+      } catch (_) {}
+      finally { setSearchLoading(false); }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const detailRun = detailId ? logs.find(r => r.runId === detailId) : null;
 
-  const visible = logs.map(run => ({
+  // if ID lookup returned results, use those; otherwise client-side filter
+  const baseRuns = searchResult || logs;
+
+  const visible = baseRuns.map(run => ({
     ...run,
     entries: run.entries.filter(e => {
       if (filter !== "all" && e.type !== filter) return false;
-      if (search) {
+      // skip text filter when API ID lookup already returned targeted results
+      if (search && !searchResult) {
         const hay = `${run.runId} ${e.step} ${e.type} ${previewText(e.content)}`.toLowerCase();
         if (!hay.includes(search.toLowerCase())) return false;
       }
@@ -570,18 +596,7 @@ export default function AIObservability() {
               gap: 8,
               alignItems: "center"
             }}>
-              <span style={{ 
-                fontFamily: MONO, 
-                fontSize: 11, 
-                color: C.textDim,
-                background: C.surface,
-                padding: "4px 8px",
-                borderRadius: 4,
-                border: `1px solid ${C.border}`
-              }}>
-                {logs.length} total runs
-              </span>
-              <button 
+              <button
                 onClick={fetchLogs} 
                 title="Refresh logs" 
                 style={{ 
@@ -609,46 +624,39 @@ export default function AIObservability() {
           </div>
           
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search by run ID, step, or keyword..."
-              style={{ 
-                flex: 1, 
-                fontFamily: MONO, 
-                fontSize: 13, 
-                background: C.bg, 
-                border: `1px solid ${C.border}`, 
-                borderRadius: 6, 
-                padding: "8px 12px", 
-                color: C.text, 
-                outline: "none",
-                transition: "border-color 0.15s"
-              }}
-              onFocus={(e) => e.currentTarget.style.borderColor = C.caret}
-              onBlur={(e) => e.currentTarget.style.borderColor = C.border}
-            />
-            {FILTERS.map(f => {
-              const active = filter === f;
-              return (
-                <button key={f} onClick={() => { setFilter(f); setDetailId(null); }} style={{
-                  fontFamily: MONO, 
-                  fontSize: 12, 
-                  fontWeight: active ? 600 : 500,
-                  padding: "7px 14px",
-                  border: active ? `2px solid ${C.caret}` : `1px solid ${C.border}`,
+            <div style={{ flex: 1, position: "relative" }}>
+              <input
+                value={search}
+                onChange={e => { setSearch(e.target.value); setDetailId(null); }}
+                placeholder="Search by run ID, step, or keyword..."
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  fontFamily: MONO,
+                  fontSize: 13,
+                  background: C.bg,
+                  border: `1px solid ${C.border}`,
                   borderRadius: 6,
-                  background: active ? "#E7F3FF" : C.surface,
-                  color: active ? C.caret : C.textMid,
-                  cursor: "pointer", 
-                  whiteSpace: "nowrap", 
-                  transition: "all 0.15s",
-                  textTransform: "capitalize"
-                }}>
-                  {f}
-                </button>
-              );
-            })}
+                  padding: "8px 36px 8px 12px",
+                  color: C.text,
+                  outline: "none",
+                  transition: "border-color 0.15s"
+                }}
+                onFocus={(e) => e.currentTarget.style.borderColor = C.caret}
+                onBlur={(e) => e.currentTarget.style.borderColor = C.border}
+              />
+              {searchLoading && (
+                <div style={{
+                  position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                  width: 14, height: 14,
+                  border: `2px solid ${C.border}`,
+                  borderTopColor: C.caret,
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
+                  pointerEvents: "none"
+                }} />
+              )}
+            </div>
           </div>
         </div>
 
