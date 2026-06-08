@@ -29,6 +29,6 @@ export const TYPE_CONFIG = new Proxy(TYPE_STYLES, {
 
 export const ALL_TYPES = ["input", "llm", "tool", "agent", "output", "error", "info"];
 
-export const API_URL = import.meta.env.VITE_API_URL;
+export const API_URL = import.meta.env.VITE_API_URL || "https://db.gtwy.ai/api/observability";
 
 export const COLLAPSE_THRESHOLD = 120;
