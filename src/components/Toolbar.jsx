@@ -1,7 +1,7 @@
 import { useRef, useEffect } from "react";
-import { MONO, C, TYPE_CONFIG, ALL_TYPES } from "../constants";
+import { MONO, C } from "../constants";
 
-function SearchInput({ value, onChange }) {
+export default function Toolbar({ search, onSearchChange, onRefresh }) {
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -16,51 +16,6 @@ function SearchInput({ value, onChange }) {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  return (
-    <div style={{ flex: 1, position: "relative" }}>
-      <input
-        ref={inputRef}
-        value={value}
-        onChange={onChange}
-        placeholder="Search by run ID, type, step, or any field value..."
-        style={{ width: "100%", boxSizing: "border-box", fontFamily: MONO, fontSize: 13, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 40px 8px 12px", color: C.text, outline: "none", transition: "border-color 0.15s" }}
-        onFocus={(e) => e.currentTarget.style.borderColor = C.caret}
-        onBlur={(e)  => e.currentTarget.style.borderColor = C.border}
-      />
-      <kbd style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontFamily: MONO, fontSize: 10, color: C.textDim, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 5px", pointerEvents: "none" }}>
-        ⌘K
-      </kbd>
-    </div>
-  );
-}
-
-function TypeFilters({ typeFilter, setTypeFilter, presentTypes }) {
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-      <span style={{ fontFamily: MONO, fontSize: 11, color: C.textDim, marginRight: 2 }}>Filter:</span>
-      <button
-        onClick={() => setTypeFilter("all")}
-        style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 4, cursor: "pointer", background: typeFilter === "all" ? C.text : C.surface, color: typeFilter === "all" ? "#FFFFFF" : C.textMid, border: `1px solid ${typeFilter === "all" ? C.text : C.border}`, transition: "all 0.15s" }}
-      >
-        all
-      </button>
-      {[...ALL_TYPES.filter(t => presentTypes.includes(t)), ...presentTypes.filter(t => !ALL_TYPES.includes(t))].map(t => {
-        const tc = TYPE_CONFIG[t];
-        const active = typeFilter === t;
-        return (
-          <button key={t}
-            onClick={() => setTypeFilter(active ? "all" : t)}
-            style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 4, cursor: "pointer", background: active ? tc.fg : tc.bg, color: active ? "#FFFFFF" : tc.fg, border: `1px solid ${active ? tc.fg : tc.border}`, transition: "all 0.15s" }}
-          >
-            {t}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-export default function Toolbar({ search, onSearchChange, typeFilter, setTypeFilter, presentTypes, onRefresh }) {
   return (
     <div style={{ background: "#FFFFFF", border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px", marginBottom: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
@@ -80,11 +35,20 @@ export default function Toolbar({ search, onSearchChange, typeFilter, setTypeFil
         </button>
       </div>
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-        <SearchInput value={search} onChange={onSearchChange} />
+      <div style={{ position: "relative" }}>
+        <input
+          ref={inputRef}
+          value={search}
+          onChange={onSearchChange}
+          placeholder="Search by log ID..."
+          style={{ width: "100%", boxSizing: "border-box", fontFamily: MONO, fontSize: 13, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 40px 8px 12px", color: C.text, outline: "none", transition: "border-color 0.15s" }}
+          onFocus={(e) => e.currentTarget.style.borderColor = C.caret}
+          onBlur={(e)  => e.currentTarget.style.borderColor = C.border}
+        />
+        <kbd style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontFamily: MONO, fontSize: 10, color: C.textDim, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 5px", pointerEvents: "none" }}>
+          ⌘K
+        </kbd>
       </div>
-
-      <TypeFilters typeFilter={typeFilter} setTypeFilter={setTypeFilter} presentTypes={presentTypes} />
     </div>
   );
 }

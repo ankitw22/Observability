@@ -1,28 +1,30 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MONO, C, TYPE_CONFIG, API_URL } from "../constants";
+import { MONO, C, TYPE_CONFIG, ALL_TYPES, API_URL } from "../constants";
 import { normalizeEntry, inferLogType } from "../utils";
 import TypeChip from "./TypeChip";
 import LogRow from "./LogRow";
 
 export default function DetailView({ run, onBack }) {
-  const [entries, setEntries]   = useState(run.entries);
-  const [logType, setLogType]   = useState(run.logType);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState(null);
+  const [entries, setEntries]     = useState(run.entries);
+  const [logType, setLogType]     = useState(run.logType);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState(null);
+
+  // filter
+  const [activeFilter, setActiveFilter] = useState("all");
 
   // key-value search
-  const [sKey, setSKey]         = useState("");
-  const [sVal, setSVal]         = useState("");
-  const [results, setResults]   = useState(null);
+  const [sKey, setSKey]           = useState("");
+  const [sVal, setSVal]           = useState("");
+  const [results, setResults]     = useState(null);
   const [searching, setSearching] = useState(false);
   const [searchErr, setSearchErr] = useState(null);
-  const debounceRef             = useRef(null);
+  const debounceRef               = useRef(null);
 
-  // fetch all entries for this log ID on mount
+  // fetch all entries on mount
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setError(null);
-
     fetch(`${API_URL}/${encodeURIComponent(run.runId)}`)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(data => {
@@ -35,7 +37,6 @@ export default function DetailView({ run, onBack }) {
       })
       .catch(e => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
-
     return () => { cancelled = true; };
   }, [run.runId]);
 
@@ -66,13 +67,17 @@ export default function DetailView({ run, onBack }) {
   const handleVal = (e) => { setSVal(e.target.value); triggerSearch(sKey, e.target.value); };
   const clearSearch = () => { setSKey(""); setSVal(""); setResults(null); setSearchErr(null); };
 
-  const displayEntries = results !== null ? results : entries;
+  const sourceEntries = results !== null ? results : entries;
+  const presentTypes  = [...new Set(entries.map(e => e.type))];
+  const displayEntries = activeFilter === "all" ? sourceEntries : sourceEntries.filter(e => e.type === activeFilter);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
 
       {/* Header card */}
       <div style={{ background: "#FFFFFF", border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", marginBottom: 16 }}>
+
+        {/* Back */}
         <button
           onClick={onBack}
           style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: MONO, fontSize: 13, fontWeight: 600, color: C.textMid, background: C.surface, border: "none", borderBottom: `1px solid ${C.border}`, cursor: "pointer", padding: "14px 20px", width: "100%", transition: "background 0.15s" }}
@@ -85,7 +90,8 @@ export default function DetailView({ run, onBack }) {
           Back to all logs
         </button>
 
-        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, padding: "16px 20px", background: "#FAFBFC" }}>
+        {/* Title row */}
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, padding: "16px 20px", background: "#FAFBFC", borderBottom: `1px solid ${C.border}` }}>
           <span style={{ fontFamily: MONO, fontSize: 15, fontWeight: 700, color: C.text }}>{run.runId}</span>
           <TypeChip type={logType} />
           {loading
@@ -98,8 +104,31 @@ export default function DetailView({ run, onBack }) {
           <span style={{ fontFamily: MONO, fontSize: 12, color: C.textDim, marginLeft: "auto" }}>{run.age}</span>
         </div>
 
+        {/* Filter chips */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "10px 20px", background: "#FAFBFC", borderBottom: `1px solid ${C.border}` }}>
+          <button
+            onClick={() => setActiveFilter("all")}
+            style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 4, cursor: "pointer", background: activeFilter === "all" ? C.text : C.surface, color: activeFilter === "all" ? "#FFFFFF" : C.textMid, border: `1px solid ${activeFilter === "all" ? C.text : C.border}`, transition: "all 0.15s" }}
+          >
+            all
+          </button>
+          {[...ALL_TYPES.filter(t => presentTypes.includes(t)), ...presentTypes.filter(t => !ALL_TYPES.includes(t))].map(t => {
+            const tc = TYPE_CONFIG[t];
+            const active = activeFilter === t;
+            return (
+              <button
+                key={t}
+                onClick={() => setActiveFilter(active ? "all" : t)}
+                style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 4, cursor: "pointer", background: active ? tc.fg : tc.bg, color: active ? "#FFFFFF" : tc.fg, border: `1px solid ${active ? tc.fg : tc.border}`, transition: "all 0.15s" }}
+              >
+                {t}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Key-value search */}
-        <div style={{ padding: "12px 20px", borderTop: `1px solid ${C.border}`, background: "#F8F9FA", display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 20px", background: "#F8F9FA", borderBottom: `1px solid ${C.border}` }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
@@ -130,12 +159,12 @@ export default function DetailView({ run, onBack }) {
 
         {/* Search status */}
         {searchErr && (
-          <div style={{ fontFamily: MONO, fontSize: 12, color: "#DC2626", padding: "8px 20px", background: "#FEF2F2", borderTop: `1px solid ${C.border}` }}>
+          <div style={{ fontFamily: MONO, fontSize: 12, color: "#DC2626", padding: "8px 20px", background: "#FEF2F2" }}>
             Search failed: {searchErr}
           </div>
         )}
         {!searchErr && results !== null && (
-          <div style={{ fontFamily: MONO, fontSize: 11, color: C.textDim, padding: "6px 20px", background: "#F0F4FF", borderTop: `1px solid ${C.border}` }}>
+          <div style={{ fontFamily: MONO, fontSize: 11, color: C.textDim, padding: "6px 20px", background: "#F0F4FF" }}>
             {results.length === 0
               ? `No matches for { ${sKey}: ${sVal} }`
               : `${results.length} result${results.length !== 1 ? "s" : ""} for { ${sKey}: ${sVal} }`}
@@ -143,21 +172,21 @@ export default function DetailView({ run, onBack }) {
         )}
       </div>
 
-      {/* Error fallback */}
       {error && (
         <div style={{ fontFamily: MONO, fontSize: 12, color: "#DC2626", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8, padding: "12px 20px", marginBottom: 12 }}>
           Failed to load full entries: {error} — showing cached preview.
         </div>
       )}
 
-      {/* Entries list */}
+      {/* Entries */}
       <div style={{ background: "#FFFFFF", border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-        {displayEntries.length === 0 && !loading && (
+        {displayEntries.length === 0 && !loading ? (
           <div style={{ fontFamily: MONO, fontSize: 13, color: C.textDim, padding: "32px 20px", textAlign: "center" }}>
             No entries to display
           </div>
+        ) : (
+          displayEntries.map((e, i) => <LogRow key={i} entry={e} />)
         )}
-        {displayEntries.map((e, i) => <LogRow key={i} entry={e} />)}
       </div>
     </div>
   );

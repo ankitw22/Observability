@@ -14,7 +14,6 @@ export default function AIObservability() {
   const [error, setError]           = useState(null);
   const [hasMore, setHasMore]       = useState(true);
   const [search, setSearch]         = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
   const [detailId, setDetailId]     = useState(null);
 
   const apiPageRef   = useRef(1);
@@ -83,20 +82,11 @@ export default function AIObservability() {
     fetchNextPage();
   };
 
-  const filtered = runs.filter(run => {
-    if (typeFilter !== "all" && run.logType !== typeFilter) return false;
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      if (
-        !run.runId.toLowerCase().includes(q) &&
-        !run.entries.some(e => JSON.stringify(e).toLowerCase().includes(q))
-      ) return false;
-    }
-    return true;
-  });
+  const filtered = search.trim()
+    ? runs.filter(run => run.runId.toLowerCase().includes(search.trim().toLowerCase()))
+    : runs;
 
-  const detailRun    = detailId ? runs.find(r => r.runId === detailId) : null;
-  const presentTypes = [...new Set(runs.flatMap(r => r.entries.map(e => e.type)))];
+  const detailRun = detailId ? runs.find(r => r.runId === detailId) : null;
   const isInitial    = fetching && runs.length === 0;
 
   return (
@@ -106,9 +96,6 @@ export default function AIObservability() {
         <Toolbar
           search={search}
           onSearchChange={e => { setSearch(e.target.value); setDetailId(null); }}
-          typeFilter={typeFilter}
-          setTypeFilter={t => { setTypeFilter(t); setDetailId(null); }}
-          presentTypes={presentTypes}
           onRefresh={handleRefresh}
         />
 
