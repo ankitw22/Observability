@@ -96,8 +96,12 @@ export function normalizeRuns(apiData) {
     items.forEach(raw => {
       const runId = raw.run_id || raw.log_id || raw.session_id || raw.id || "default";
       if (!groups[runId]) {
-        groups[runId] = { runId, entries: [], ts: raw.timestamp || raw.ts || raw.created_at || "" };
+        groups[runId] = { runId, entries: [], ts: raw.timestamp || raw.ts || raw.created_at || "", lastUpdated: raw.updated_at || raw.timestamp || raw.ts || raw.created_at || "" };
         groupOrder.push(runId);
+      }
+      const upd = raw.updated_at || raw.timestamp || raw.ts || raw.created_at || "";
+      if (upd && new Date(upd) > new Date(groups[runId].lastUpdated || 0)) {
+        groups[runId].lastUpdated = upd;
       }
       groups[runId].entries.push(normalizeEntry(raw));
     });
@@ -107,7 +111,7 @@ export function normalizeRuns(apiData) {
       const hasErr  = g.entries.some(e => e.type === "error");
       const hasWarn = g.entries.some(e => e.content?.t === "err");
       const logType = inferLogType(g.entries);
-      return { runId: g.runId, status: hasErr ? "error" : hasWarn ? "warn" : "ok", age: timeAgo(g.ts), entries: g.entries, logType, ts: g.ts };
+      return { runId: g.runId, status: hasErr ? "error" : hasWarn ? "warn" : "ok", age: timeAgo(g.lastUpdated || g.ts), entries: g.entries, logType, ts: g.ts, lastUpdated: g.lastUpdated };
     });
   }
 

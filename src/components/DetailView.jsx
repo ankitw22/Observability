@@ -1,12 +1,77 @@
-import { MONO, C, TYPE_CONFIG } from "../constants";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { MONO, C, TYPE_CONFIG, API_URL } from "../constants";
+import { normalizeEntry, inferLogType } from "../utils";
 import TypeChip from "./TypeChip";
 import LogRow from "./LogRow";
 
 export default function DetailView({ run, onBack }) {
-  const tc = TYPE_CONFIG[run.logType] || TYPE_CONFIG.info;
+  const [entries, setEntries]   = useState(run.entries);
+  const [logType, setLogType]   = useState(run.logType);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState(null);
+
+  // key-value search
+  const [sKey, setSKey]         = useState("");
+  const [sVal, setSVal]         = useState("");
+  const [results, setResults]   = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [searchErr, setSearchErr] = useState(null);
+  const debounceRef             = useRef(null);
+
+  // fetch all entries for this log ID on mount
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setError(null);
+
+    fetch(`${API_URL}/${encodeURIComponent(run.runId)}`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(data => {
+        if (cancelled) return;
+        const raw = data.logs || data.entries || data.data || (Array.isArray(data) ? data : []);
+        const normalized = raw.map(normalizeEntry);
+        normalized.sort((a, b) => new Date(a.tsRaw || 0) - new Date(b.tsRaw || 0));
+        setEntries(normalized);
+        setLogType(inferLogType(normalized));
+      })
+      .catch(e => { if (!cancelled) setError(e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [run.runId]);
+
+  const doSearch = useCallback(async (k, v) => {
+    if (!k.trim() && !v.trim()) { setResults(null); setSearchErr(null); return; }
+    setSearching(true); setSearchErr(null);
+    try {
+      const payload = JSON.stringify({ [k]: v });
+      const res = await fetch(`${API_URL}/${encodeURIComponent(run.runId)}?search=${encodeURIComponent(payload)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const raw = data.logs || data.entries || data.data || (Array.isArray(data) ? data : []);
+      setResults(raw.map(normalizeEntry));
+    } catch (e) {
+      setSearchErr(e.message);
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [run.runId]);
+
+  const triggerSearch = (k, v) => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => doSearch(k, v), 350);
+  };
+
+  const handleKey = (e) => { setSKey(e.target.value); triggerSearch(e.target.value, sVal); };
+  const handleVal = (e) => { setSVal(e.target.value); triggerSearch(sKey, e.target.value); };
+  const clearSearch = () => { setSKey(""); setSVal(""); setResults(null); setSearchErr(null); };
+
+  const displayEntries = results !== null ? results : entries;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+
+      {/* Header card */}
       <div style={{ background: "#FFFFFF", border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", marginBottom: 16 }}>
         <button
           onClick={onBack}
@@ -20,15 +85,79 @@ export default function DetailView({ run, onBack }) {
           Back to all logs
         </button>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", background: "#FAFBFC" }}>
-          <span style={{ fontFamily: MONO, fontSize: 16, fontWeight: 700, color: C.text }}>{run.runId}</span>
-          <TypeChip type={run.logType} />
-          <span style={{ fontFamily: MONO, fontSize: 12, color: C.textDim, marginLeft: "auto", fontWeight: 500 }}>{run.age}</span>
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, padding: "16px 20px", background: "#FAFBFC" }}>
+          <span style={{ fontFamily: MONO, fontSize: 15, fontWeight: 700, color: C.text }}>{run.runId}</span>
+          <TypeChip type={logType} />
+          {loading
+            ? <span style={{ fontFamily: MONO, fontSize: 12, color: C.textDim, display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 11, height: 11, border: `2px solid ${C.border}`, borderTopColor: C.caret, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                Loading...
+              </span>
+            : <span style={{ fontFamily: MONO, fontSize: 12, color: C.textDim }}>{entries.length} entries</span>
+          }
+          <span style={{ fontFamily: MONO, fontSize: 12, color: C.textDim, marginLeft: "auto" }}>{run.age}</span>
         </div>
+
+        {/* Key-value search */}
+        <div style={{ padding: "12px 20px", borderTop: `1px solid ${C.border}`, background: "#F8F9FA", display: "flex", alignItems: "center", gap: 8 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            value={sKey}
+            onChange={handleKey}
+            placeholder="key"
+            style={{ width: 140, fontFamily: MONO, fontSize: 12, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 5, padding: "5px 10px", outline: "none", color: C.text }}
+            onFocus={(e) => e.currentTarget.style.borderColor = C.caret}
+            onBlur={(e)  => e.currentTarget.style.borderColor = C.border}
+          />
+          <span style={{ fontFamily: MONO, fontSize: 13, color: C.textDim, fontWeight: 600 }}>:</span>
+          <input
+            value={sVal}
+            onChange={handleVal}
+            placeholder="value"
+            style={{ flex: 1, fontFamily: MONO, fontSize: 12, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 5, padding: "5px 10px", outline: "none", color: C.text }}
+            onFocus={(e) => e.currentTarget.style.borderColor = C.caret}
+            onBlur={(e)  => e.currentTarget.style.borderColor = C.border}
+          />
+          {searching && (
+            <div style={{ width: 12, height: 12, border: `2px solid ${C.border}`, borderTopColor: C.caret, borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+          )}
+          {(sKey || sVal) && !searching && (
+            <button onClick={clearSearch} style={{ fontFamily: MONO, fontSize: 11, color: C.textDim, background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}>✕</button>
+          )}
+        </div>
+
+        {/* Search status */}
+        {searchErr && (
+          <div style={{ fontFamily: MONO, fontSize: 12, color: "#DC2626", padding: "8px 20px", background: "#FEF2F2", borderTop: `1px solid ${C.border}` }}>
+            Search failed: {searchErr}
+          </div>
+        )}
+        {!searchErr && results !== null && (
+          <div style={{ fontFamily: MONO, fontSize: 11, color: C.textDim, padding: "6px 20px", background: "#F0F4FF", borderTop: `1px solid ${C.border}` }}>
+            {results.length === 0
+              ? `No matches for { ${sKey}: ${sVal} }`
+              : `${results.length} result${results.length !== 1 ? "s" : ""} for { ${sKey}: ${sVal} }`}
+          </div>
+        )}
       </div>
 
+      {/* Error fallback */}
+      {error && (
+        <div style={{ fontFamily: MONO, fontSize: 12, color: "#DC2626", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8, padding: "12px 20px", marginBottom: 12 }}>
+          Failed to load full entries: {error} — showing cached preview.
+        </div>
+      )}
+
+      {/* Entries list */}
       <div style={{ background: "#FFFFFF", border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-        {run.entries.map((e, i) => <LogRow key={i} entry={e} />)}
+        {displayEntries.length === 0 && !loading && (
+          <div style={{ fontFamily: MONO, fontSize: 13, color: C.textDim, padding: "32px 20px", textAlign: "center" }}>
+            No entries to display
+          </div>
+        )}
+        {displayEntries.map((e, i) => <LogRow key={i} entry={e} />)}
       </div>
     </div>
   );

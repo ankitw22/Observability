@@ -14,6 +14,8 @@ export default function LogRow({ entry }) {
   const [expanded, setExpanded] = useState(false);
   const preview = previewText(entry.content);
   const hasContent = preview.trim().length > 0;
+  const lineCount = preview.trim().split("\n").length;
+  const showGradient = lineCount > 3;
 
   const onClick = useCallback(() => {
     if (hasContent) setExpanded(v => !v);
@@ -45,7 +47,7 @@ export default function LogRow({ entry }) {
               <div style={{ fontFamily: MONO, fontSize: 11.5, color: C.textDim, lineHeight: 1.65, maxHeight: "calc(1.65em * 3)", overflow: "hidden", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                 {preview}
               </div>
-              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "1.6em", background: `linear-gradient(transparent, #FFFFFF)`, pointerEvents: "none" }} />
+              {showGradient && <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "1.6em", background: `linear-gradient(transparent, #FFFFFF)`, pointerEvents: "none" }} />}
             </div>
           )}
           {hasContent && expanded && (

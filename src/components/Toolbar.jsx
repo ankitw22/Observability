@@ -1,16 +1,35 @@
+import { useRef, useEffect } from "react";
 import { MONO, C, TYPE_CONFIG, ALL_TYPES } from "../constants";
 
 function SearchInput({ value, onChange }) {
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   return (
-    <div style={{ flex: 1 }}>
+    <div style={{ flex: 1, position: "relative" }}>
       <input
+        ref={inputRef}
         value={value}
         onChange={onChange}
         placeholder="Search by run ID, type, step, or any field value..."
-        style={{ width: "100%", boxSizing: "border-box", fontFamily: MONO, fontSize: 13, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px", color: C.text, outline: "none", transition: "border-color 0.15s" }}
+        style={{ width: "100%", boxSizing: "border-box", fontFamily: MONO, fontSize: 13, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 40px 8px 12px", color: C.text, outline: "none", transition: "border-color 0.15s" }}
         onFocus={(e) => e.currentTarget.style.borderColor = C.caret}
         onBlur={(e)  => e.currentTarget.style.borderColor = C.border}
       />
+      <kbd style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontFamily: MONO, fontSize: 10, color: C.textDim, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 5px", pointerEvents: "none" }}>
+        ⌘K
+      </kbd>
     </div>
   );
 }

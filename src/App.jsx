@@ -1,63 +1,144 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { C, API_URL } from "./constants";
-import { normalizeRuns, filterRuns } from "./utils";
+import { normalizeRuns } from "./utils";
 import Toolbar from "./components/Toolbar";
 import RunCard from "./components/RunCard";
 import DetailView from "./components/DetailView";
 import { LoadingScreen, ErrorScreen, EmptyScreen } from "./components/StatusScreens";
 
-export default function AIObservability() {
-  const [logs, setLogs]                   = useState([]);
-  const [loading, setLoading]             = useState(true);
-  const [error, setError]                 = useState(null);
-  const [search, setSearch]               = useState("");
-  const [typeFilter, setTypeFilter]       = useState("all");
-  const [detailId, setDetailId]           = useState(null);
+const API_PAGE_SIZE = 100;
 
-  const fetchLogs = useCallback(async () => {
-    setLoading(true); setError(null);
+export default function AIObservability() {
+  const [runs, setRuns]             = useState([]);
+  const [fetching, setFetching]     = useState(false);
+  const [error, setError]           = useState(null);
+  const [hasMore, setHasMore]       = useState(true);
+  const [search, setSearch]         = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [detailId, setDetailId]     = useState(null);
+
+  const apiPageRef   = useRef(1);
+  const hasMoreRef   = useRef(true);
+  const fetchingRef  = useRef(false);
+  const seenIdsRef   = useRef(new Set());
+
+  const fetchNextPage = useCallback(async () => {
+    if (fetchingRef.current || !hasMoreRef.current) return;
+    fetchingRef.current = true;
+    setFetching(true);
+    setError(null);
     try {
-      const res = await fetch(API_URL);
+      const params = new URLSearchParams({ pageSize: API_PAGE_SIZE, page: apiPageRef.current });
+      const res = await fetch(`${API_URL}?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const runs = normalizeRuns(data);
-      runs.sort((a, b) => new Date(a.ts || 0) - new Date(b.ts || 0));
-      setLogs(runs);
+
+      const newRuns = normalizeRuns(data.logs || []);
+      newRuns.sort((a, b) => new Date(b.lastUpdated || b.ts || 0) - new Date(a.lastUpdated || a.ts || 0));
+
+      const fresh = newRuns.filter(r => !seenIdsRef.current.has(r.runId));
+      fresh.forEach(r => seenIdsRef.current.add(r.runId));
+      setRuns(prev => [...prev, ...fresh]);
+
+      apiPageRef.current += 1;
+      if (apiPageRef.current > (data.totalPages || 1)) {
+        hasMoreRef.current = false;
+        setHasMore(false);
+      }
     } catch (e) {
       setError(e.message);
     } finally {
-      setLoading(false);
+      fetchingRef.current = false;
+      setFetching(false);
     }
   }, []);
 
-  useEffect(() => { fetchLogs(); }, [fetchLogs]);
+  // initial load
+  useEffect(() => { fetchNextPage(); }, [fetchNextPage]);
 
-  const visible      = filterRuns(logs, { typeFilter, search });
-  const detailRun    = detailId ? logs.find(r => r.runId === detailId) : null;
-  const presentTypes = [...new Set(logs.flatMap(r => r.entries.map(e => e.type)))];
+  // window scroll → trigger next page when near bottom (throttled via rAF)
+  useEffect(() => {
+    let rafId = null;
+    const onScroll = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+        if (scrollHeight - scrollTop - clientHeight < 400) {
+          fetchNextPage();
+        }
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => { window.removeEventListener("scroll", onScroll); if (rafId) cancelAnimationFrame(rafId); };
+  }, [fetchNextPage]);
+
+  const handleRefresh = () => {
+    seenIdsRef.current = new Set();
+    apiPageRef.current = 1;
+    hasMoreRef.current = true;
+    setRuns([]);
+    setHasMore(true);
+    setError(null);
+    fetchNextPage();
+  };
+
+  const filtered = runs.filter(run => {
+    if (typeFilter !== "all" && run.logType !== typeFilter) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      if (
+        !run.runId.toLowerCase().includes(q) &&
+        !run.entries.some(e => JSON.stringify(e).toLowerCase().includes(q))
+      ) return false;
+    }
+    return true;
+  });
+
+  const detailRun    = detailId ? runs.find(r => r.runId === detailId) : null;
+  const presentTypes = [...new Set(runs.flatMap(r => r.entries.map(e => e.type)))];
+  const isInitial    = fetching && runs.length === 0;
 
   return (
     <div style={{ fontFamily: "'JetBrains Mono','Fira Code','Cascadia Code',monospace", background: C.bg, minHeight: "100vh", color: C.text }}>
-<div style={{ maxWidth: "1600px", margin: "0 auto", padding: "1.5rem 2rem" }}>
+      <div style={{ maxWidth: "1600px", margin: "0 auto", padding: "1.5rem 2rem" }}>
 
         <Toolbar
           search={search}
           onSearchChange={e => { setSearch(e.target.value); setDetailId(null); }}
           typeFilter={typeFilter}
-          setTypeFilter={setTypeFilter}
+          setTypeFilter={t => { setTypeFilter(t); setDetailId(null); }}
           presentTypes={presentTypes}
-          onRefresh={fetchLogs}
+          onRefresh={handleRefresh}
         />
 
-        {loading && <LoadingScreen />}
-        {error   && <ErrorScreen message={error} onRetry={fetchLogs} />}
+        {isInitial && <LoadingScreen />}
+        {error && !fetching && <ErrorScreen message={error} onRetry={handleRefresh} />}
+        {!isInitial && !fetching && !error && filtered.length === 0 && <EmptyScreen />}
 
-        {!loading && !error && visible.length === 0 && <EmptyScreen />}
-
-        {!loading && !error && visible.length > 0 && (
+        {!isInitial && (
           detailRun
             ? <DetailView run={detailRun} onBack={() => setDetailId(null)} />
-            : visible.map(run => <RunCard key={run.runId} run={run} onOpen={setDetailId} />)
+            : <>
+                {filtered.map(run => (
+                  <RunCard key={run.runId} run={run} onOpen={setDetailId} />
+                ))}
+
+                {fetching && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "32px 0", background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, marginTop: 8, boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+                    <div style={{ width: 28, height: 28, border: `3px solid ${C.border}`, borderTopColor: C.caret, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                    <span style={{ fontFamily: "'JetBrains Mono','Fira Code','Cascadia Code',monospace", fontSize: 12, color: C.textDim, fontWeight: 500 }}>
+                      Fetching next page...
+                    </span>
+                  </div>
+                )}
+
+                {!fetching && !hasMore && filtered.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px", fontFamily: "'JetBrains Mono','Fira Code','Cascadia Code',monospace", fontSize: 12, color: C.textDim, borderTop: `1px dashed ${C.border}`, marginTop: 8 }}>
+                    All {filtered.length} log IDs loaded
+                  </div>
+                )}
+              </>
         )}
       </div>
     </div>
