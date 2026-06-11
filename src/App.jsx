@@ -52,8 +52,17 @@ export default function AIObservability() {
     }
   }, []);
 
-  // initial load
-  useEffect(() => { fetchNextPage(); }, [fetchNextPage]);
+  // auto-fetch: (1) after refresh empties runs, (2) when page isn't tall enough to scroll yet
+  useEffect(() => {
+    if (fetching) return;
+    if (!hasMoreRef.current) return;
+    // case 1: refresh just cleared runs
+    if (runs.length === 0) { fetchNextPage(); return; }
+    // case 2: content shorter than viewport — keep loading until scrollable
+    if (document.documentElement.scrollHeight <= window.innerHeight + 100) {
+      fetchNextPage();
+    }
+  }, [runs, fetching, fetchNextPage]);
 
   // window scroll → trigger next page when near bottom (throttled via rAF)
   useEffect(() => {
@@ -73,13 +82,13 @@ export default function AIObservability() {
   }, [fetchNextPage]);
 
   const handleRefresh = () => {
+    fetchingRef.current = false;   // unblock in case a fetch was in flight
     seenIdsRef.current = new Set();
     apiPageRef.current = 1;
     hasMoreRef.current = true;
     setRuns([]);
     setHasMore(true);
     setError(null);
-    fetchNextPage();
   };
 
   const filtered = search.trim()
