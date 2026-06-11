@@ -1,7 +1,7 @@
 import { useRef, useEffect } from "react";
 import { MONO, C } from "../constants";
 
-export default function Toolbar({ search, onSearchChange, onRefresh }) {
+export default function Toolbar({ search, onSearchChange, searching, onRefresh }) {
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -45,9 +45,10 @@ export default function Toolbar({ search, onSearchChange, onRefresh }) {
           onFocus={(e) => e.currentTarget.style.borderColor = C.caret}
           onBlur={(e)  => e.currentTarget.style.borderColor = C.border}
         />
-        <kbd style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontFamily: MONO, fontSize: 10, color: C.textDim, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 5px", pointerEvents: "none" }}>
-          ⌘K
-        </kbd>
+        {searching
+          ? <div style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, border: `2px solid ${C.border}`, borderTopColor: C.caret, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+          : <kbd style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontFamily: MONO, fontSize: 10, color: C.textDim, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 5px", pointerEvents: "none" }}>⌘K</kbd>
+        }
       </div>
     </div>
   );
